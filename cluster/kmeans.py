@@ -3,7 +3,7 @@ from scipy.spatial.distance import cdist
 
 
 class KMeans:
-    def __init__(self, k: int, tol: float = 1e-6, max_iter: int = 100):
+    def __init__(self, k: int, tol: float = 1e-6, max_iter: int = 100, init: str = "random"):
         """
         In this method you should initialize whatever attributes will be required for the class.
 
@@ -19,6 +19,8 @@ class KMeans:
                 the minimum error tolerance from previous error during optimization to quit the model fit
             max_iter: int
                 the maximum number of iterations before quitting model fit
+            init: str
+                initialization method for centroids, either "random" or "kmeans++"
         """
         if not isinstance(k, int):
             raise TypeError('k must be an int')
@@ -28,14 +30,39 @@ class KMeans:
             raise ValueError('tol must be > 0')
         if max_iter <= 0:
             raise ValueError('max_iter must be > 0')
+        if init not in ("random", "kmeans++"):
+            raise ValueError('init must be "random" or "kmeans++"')
 
         self.k = k
         self.tol = tol
         self.max_iter = max_iter
+        self.init = init
         self._centroids = None
         self._error = None
         self._fitted = False
         self._n_features = None
+
+    def _kmeans_plus_plus_init(self, mat: np.ndarray) -> np.ndarray:
+        """
+        Picks initial centroids using the kmeans++ algorithm, where each
+        successive centroid is sampled with probability proportional to D(x)^2
+        (squared distance to the nearest existing centroid).
+        """
+        n, m = mat.shape
+        centroids = np.empty((self.k, m))
+
+        # pick first centroid uniformly at random
+        centroids[0] = mat[np.random.randint(0, n)]
+
+        for c in range(1, self.k):
+            distances = cdist(mat, centroids[:c])
+            min_sq_dist = np.min(distances, axis=1) ** 2
+
+            # sample next centroid proportional to D(x)^2
+            probs = min_sq_dist / min_sq_dist.sum()
+            centroids[c] = mat[np.random.choice(n, p=probs)]
+
+        return centroids
 
     def fit(self, mat: np.ndarray):
         """
@@ -61,8 +88,12 @@ class KMeans:
             raise ValueError('number of observations must be >= k')
 
         self._n_features = m
-        init_idx = np.random.choice(n, size=self.k, replace=False)
-        centroids = mat[init_idx].copy()
+
+        if self.init == "kmeans++":
+            centroids = self._kmeans_plus_plus_init(mat)
+        else:
+            init_idx = np.random.choice(n, size=self.k, replace=False)
+            centroids = mat[init_idx].copy()
         prev_error = None
 
         for _ in range(self.max_iter):
