@@ -20,6 +20,22 @@ class KMeans:
             max_iter: int
                 the maximum number of iterations before quitting model fit
         """
+        if not isinstance(k, int):
+            raise TypeError('k must be an int')
+        if k <= 0:
+            raise ValueError('k must be > 0')
+        if tol <= 0:
+            raise ValueError('tol must be > 0')
+        if max_iter <= 0:
+            raise ValueError('max_iter must be > 0')
+
+        self.k = k
+        self.tol = tol
+        self.max_iter = max_iter
+        self._centroids = None
+        self._error = None
+        self._fitted = False
+        self._n_features = None
 
     def fit(self, mat: np.ndarray):
         """
@@ -36,6 +52,46 @@ class KMeans:
             mat: np.ndarray
                 A 2D matrix where the rows are observations and columns are features
         """
+        if not isinstance(mat, np.ndarray):
+            raise TypeError('mat must be a numpy array')
+        if mat.ndim != 2:
+            raise ValueError('mat must be a 2D array')
+        n, m = mat.shape
+        if n < self.k:
+            raise ValueError('number of observations must be >= k')
+
+        self._n_features = m
+        init_idx = np.random.choice(n, size=self.k, replace=False)
+        centroids = mat[init_idx].copy()
+        prev_error = None
+
+        for _ in range(self.max_iter):
+            distances = cdist(mat, centroids)
+            labels = np.argmin(distances, axis=1)
+
+            new_centroids = centroids.copy()
+            for idx in range(self.k):
+                members = mat[labels == idx]
+                if members.size == 0:
+                    new_centroids[idx] = mat[np.random.randint(0, n)]
+                else:
+                    new_centroids[idx] = members.mean(axis=0)
+
+            distances = cdist(mat, new_centroids)
+            min_dist = distances[np.arange(n), np.argmin(distances, axis=1)]
+            error = np.mean(min_dist ** 2)
+
+            if prev_error is not None and abs(prev_error - error) < self.tol:
+                centroids = new_centroids
+                prev_error = error
+                break
+
+            centroids = new_centroids
+            prev_error = error
+
+        self._centroids = centroids
+        self._error = prev_error if prev_error is not None else 0.0
+        self._fitted = True
 
     def predict(self, mat: np.ndarray) -> np.ndarray:
         """
@@ -53,6 +109,17 @@ class KMeans:
             np.ndarray
                 a 1D array with the cluster label for each of the observations in `mat`
         """
+        if not self._fitted:
+            raise ValueError('model must be fit before calling predict')
+        if not isinstance(mat, np.ndarray):
+            raise TypeError('mat must be a numpy array')
+        if mat.ndim != 2:
+            raise ValueError('mat must be a 2D array')
+        if mat.shape[1] != self._n_features:
+            raise ValueError('input data must have same number of features as fit data')
+
+        distances = cdist(mat, self._centroids)
+        return np.argmin(distances, axis=1)
 
     def get_error(self) -> float:
         """
@@ -63,6 +130,9 @@ class KMeans:
             float
                 the squared-mean error of the fit model
         """
+        if not self._fitted:
+            raise ValueError('model must be fit before calling get_error')
+        return float(self._error)
 
     def get_centroids(self) -> np.ndarray:
         """
@@ -72,3 +142,6 @@ class KMeans:
             np.ndarray
                 a `k x m` 2D matrix representing the cluster centroids of the fit model
         """
+        if not self._fitted:
+            raise ValueError('model must be fit before calling get_centroids')
+        return self._centroids.copy()
